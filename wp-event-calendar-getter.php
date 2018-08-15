@@ -148,6 +148,118 @@ function wp_ec_getter_date_string_to_datetime($date, $endof = false) {
 	1000 = yearly
 */
 
+/*
+NOTES
+
+Arguments:
+from  - optional - default is today
+to    - optional
+at    - "start", "end", or "both" - optional - default is "end"
+limit - optional
+
+     | start | end | both 
+-----+-------+-----+------
+from | A     | A   | A    
+-----+-------+-----+------
++ to | B     | B   | C    
+
+A:
+if (at == "both") at = "end";
+
+SELECT wp_posts.*, start.meta_value AS "start_date", end.meta_value AS "end_date" FROM wp_posts
+	LEFT JOIN wp_postmeta start ON wp_posts.ID=start.post_id AND start.meta_key="wp_event_calendar_date_time"
+	LEFT JOIN wp_postmeta end ON wp_posts.ID=end.post_id AND end.meta_key="wp_event_calendar_end_date_time"
+	WHERE wp_posts.post_type="event" AND wp_posts.post_status="publish" AND CAST([at].meta_value AS DATETIME) >= [from]
+	ORDER BY CASE
+		WHEN CAST([start].meta_value AS DATETIME) >= "2018-05-08 00:00:00" THEN start.meta_value
+		ELSE end.meta_value
+	END ASC
+	;
+
+SELECT wp_posts.post_name, start.meta_value AS "start_date", end.meta_value AS "end_date" FROM wp_posts
+	LEFT JOIN wp_postmeta start ON wp_posts.ID=start.post_id AND start.meta_key="wp_event_calendar_date_time"
+	LEFT JOIN wp_postmeta end ON wp_posts.ID=end.post_id AND end.meta_key="wp_event_calendar_end_date_time"
+	WHERE wp_posts.post_type="event" AND wp_posts.post_status="publish" AND CAST(end.meta_value AS DATETIME) >= "2018-05-08 00:00:00"
+	ORDER BY CASE
+		WHEN CAST(start.meta_value AS DATETIME) >= "2018-05-08 00:00:00" THEN start.meta_value
+		ELSE end.meta_value
+	END ASC
+	LIMIT 3
+	;
+
+B:
+SELECT wp_posts.*, start.meta_value AS "start_date", end.meta_value AS "end_date" FROM wp_posts
+	LEFT JOIN wp_postmeta start ON wp_posts.ID=start.post_id AND start.meta_key="wp_event_calendar_date_time"
+	LEFT JOIN wp_postmeta end ON wp_posts.ID=end.post_id AND end.meta_key="wp_event_calendar_end_date_time"
+	WHERE wp_posts.post_type="event" AND wp_posts.post_status="publish"
+*/
+
+
+
+function wp_ec_getter_get_results($args) {
+	global $wpdb;
+
+	$defaults = array (
+		'from'  => date('Y-m-d H:i:s'),
+		'to'    => NULL,
+		'at'    => 'end',
+		'limit' => NULL,
+		'order' => 'first'
+	);
+
+	$args = wp_parse_args($args, $defaults);
+
+	$query = "
+		SELECT posts.*, start.meta_value AS 'start_date', end.meta_value AS 'end_date', all_day.meta_value AS 'all_day' FROM $wpdb->posts posts
+		LEFT JOIN $wpdb->postmeta start ON posts.ID=start.post_id AND start.meta_key='wp_event_calendar_date_time'
+		LEFT JOIN $wpdb->postmeta end ON posts.ID=end.post_id AND end.meta_key='wp_event_calendar_end_date_time'
+		LEFT JOIN $wpdb->postmeta all_day ON posts.ID=all_day.post_id AND all_day.meta_key='wp_event_calendar_all_day'
+		WHERE posts.post_type='event' AND (posts.post_status='publish' OR posts.post_status='passed')
+	";
+
+	if (is_null($args['to'])) {
+		$query .= " AND CAST({$args['at']}.meta_value AS DATETIME) >= '{$args['from']}'";
+	} else {
+		switch ($args['at']) {
+			case 'start':
+			case 'end':
+				$query .= " AND CAST({$args['at']}.meta_value AS DATETIME) BETWEEN '{$args['from']}' AND '{$args['to']}'";
+			break;
+
+			default:
+				$query .= " AND CAST(end.meta_value AS DATETIME) >= '{$args['from']}' AND CAST(start.meta_value AS DATETIME) <= '{$args['to']}'";
+			break;
+		}
+	}
+
+	switch ($args['order']) {
+		case 'start':
+			$query .= ' ORDER BY start.meta_value ASC';
+		break;
+
+		case 'end':
+			$query .= ' ORDER BY end.value_value ASC';
+		break;
+
+		default:
+			$query .= "
+				ORDER BY CASE
+					WHEN CAST(start.meta_value AS DATETIME) >= '{$args['from']}' THEN start.meta_value
+					ELSE end.meta_value
+				END ASC
+			";
+		break;
+	}
+
+	if (!is_null($args['limit'])) $query .= " LIMIT {$args['limit']}";
+
+	$query .= ';';
+
+	$results = $wpdb->get_results($query, OBJECT);
+
+	return $results;
+}
+
 function wp_ec_getter_get_events_from_rest($request) {
 	$from  = null;
 	$to    = null;
@@ -250,7 +362,8 @@ function wp_ec_getter_get_events_from_rest($request) {
 			'start'        => get_post_meta($post->ID, 'wp_event_calendar_date_time', true),
 			'end'          => get_post_meta($post->ID, 'wp_event_calendar_end_date_time', true),
 			'allDay'       => get_post_meta($post->ID, 'wp_event_calendar_all_day', true),
-			'repeat'       => (int) get_post_meta($post->ID, 'wp_event_calendar_repeat', true)
+			'repeat'       => (int) get_post_meta($post->ID, 'wp_event_calendar_repeat', true),
+			'location'     => get_post_meta($post->ID, 'wp_event_calendar_location', true)
 		);
 	}
 
@@ -287,3 +400,12 @@ function wp_ec_getter_register_routes() {
 		)
 	));
 }
+
+// https://github.com/stuttter/wp-event-calendar/issues/11
+add_filter( 'register_post_type_args', function( $args, $name ) {
+    if ( 'event' === $name ) {
+        $args['publicly_queryable'] = true;
+    }
+
+   return $args;
+}, 10, 2 );
