@@ -20,7 +20,7 @@ function event_getter_modify_args($args, $post_type) {
 	return $args;
 }
 
-function event_getter_get_event_range($post_id, $date_format = 'M j') {
+function event_getter_get_event_range($post_id, $date_format = 'D, M j') {
 	$datetime_start_meta = get_post_meta($post_id, 'wp_event_calendar_date_time', true);
 	$datetime_end_meta   = get_post_meta($post_id, 'wp_event_calendar_end_date_time', true);
 
@@ -56,16 +56,24 @@ function event_getter_get_event_info($post_id, $date_format = 'l, M j', $time_fo
 		: false;
 	
 	$same_day = $datetime_start->format('Y-m-d') === $datetime_end->format('Y-m-d');
+	$date = false;
 
-	$format = $datetime_all_day_meta !== '' ? $date_format : $date_format . ', ' . $time_format;
+	if ( $same_day ) {
+		$date = $datetime_start->format($date_format);
+		$format = $time_format;
 
-	if ( $same_day && $datetime_all_day_meta !== '' ) { $datetime_end = false; }
+		if ( $datetime_all_day_meta !== '' ) {
+			$datetime_start = false;
+			$datetime_end = false;
+		}
+	} else $format = $datetime_all_day_meta !== '' ? $date_format : $date_format . ', ' . $time_format;
 
-	$date_start = $datetime_start->format($format);
+	$date_start = $datetime_end !== false ? $datetime_start->format($format) : false;
 	$date_end   = $datetime_end !== false ? $datetime_end->format($format) : false;
 	$location   = $location_meta !== '' ? $location_meta : false;
 
 	return array(
+		'date'       => $date,
 		'date_start' => $date_start,
 		'date_end'   => $date_end,
 		'location'   => $location
@@ -93,6 +101,7 @@ function event_getter_get_month_query($month = false, $year = false) {
 		'orderby'        => 'meta_value',
 		'order'          => 'ASC',
 		'posts_per_page' => -1,
+		'post_status'    => array( 'publish', 'passed' ),
 		'meta_query'     => array(
 			'relation' => 'OR',
 			array(
