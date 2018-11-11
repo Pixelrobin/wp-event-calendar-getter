@@ -54,13 +54,12 @@ function event_getter_get_event_info($post_id, $date_format = 'l, M j', $time_fo
 	$datetime_end = $datetime_end_meta !== ''
 		? DateTime::createFromFormat('Y-m-d H:i:s', $datetime_end_meta)
 		: false;
+	
+	$same_day = $datetime_start->format('Y-m-d') === $datetime_end->format('Y-m-d');
 
-	if (
-		$datetime_end === false
-		|| $datetime_start->format('Y-m-d') === $datetime_end->format('Y-m-d')
-	) {
-		$format = $time_format;
-	} else $format = $datetime_all_day_meta !== '' ? $date_format : $date_format . ', ' . $time_format;
+	$format = $datetime_all_day_meta !== '' ? $date_format : $date_format . ', ' . $time_format;
+
+	if ( $same_day && $datetime_all_day_meta !== '' ) { $datetime_end = false; }
 
 	$date_start = $datetime_start->format($format);
 	$date_end   = $datetime_end !== false ? $datetime_end->format($format) : false;
