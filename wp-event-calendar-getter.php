@@ -10,7 +10,9 @@
 	Text Domain: wp-event-calendar-getter
 */
 
+
 // --- Functions --- //
+
 function event_getter_modify_args($args, $post_type) {
 	if ($post_type === 'event') {
 		$args['public'] = true;
@@ -125,8 +127,31 @@ function event_getter_get_month_query($month = false, $year = false) {
 		)
 	);
 
-	return $query = new WP_Query($query_args);
+	return new WP_Query($query_args);
 }
+
+
+function event_getter_get_upcoming_query($post_amount = 5) {
+	$date = new DateTime();
+
+	$query_args = array(
+		'post_type'      => 'event',
+		'meta_key'       => 'wp_event_calendar_date_time',
+		'orderby'        => 'meta_value',
+		'order'          => 'ASC',
+		'posts_per_page' => $post_amount,
+		'post_status'    => array( 'publish', 'passed' ),
+		'meta_query'     => array(
+			'key'     => 'wp_event_calendar_date_time',
+			'value'   => $date->format('Y-m-d H:i:s'),
+			'compare' => '>',
+			'type'    => 'DATETIME'
+		)
+	);
+
+	return new WP_Query($query_args);
+}
+
 
 // --- Hooks --- //
 add_filter('register_post_type_args', 'event_getter_modify_args', 10, 2);
